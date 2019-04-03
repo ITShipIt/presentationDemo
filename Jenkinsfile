@@ -1,27 +1,25 @@
 pipeline {
     agent any
+    
     stages {
-        stage('---clean---') {
+        stage('---Build---') {
             steps {
-                sh "cd ~/"
-                sh "ls"
-                sh "cd ~/src/school/IT447/jsPipelineTest"
-
-
+                slackSend(message: "Begin Build", channel: "@trevor_garn")
+                sh "docker stop \$(docker ps -q --filter ancestor=demo)"
+                sh "docker build -t demo ."
+                sh "docker run -d -p 4000:80 demo"
             }
         }
-        stage('--Docker Image--') {
+        stage('---Test---') {
             steps {
-                sh "docker build -t trevash/jspipelinetest ."
-                sh "aws ecr batch-delete-image --repository-name js-pipeline-test --image-ids imageTag=recent"
-                sh "docker tag jspipelinetest:latest 600253944034.dkr.ecr.us-west-2.amazonaws.com/js-pipeline-test:recent"
-                sh "docker push 600253944034.dkr.ecr.us-west-2.amazonaws.com/js-pipeline-test:recent"
-            }
-        }
-        stage('--Deploy--') {
-            steps {
-                sh "docker pull 600253944034.dkr.ecr.us-west-2.amazonaws.com/js-pipeline-test:recent"
-                sh "docker run -d -p 4000:80 600253944034.dkr.ecr.us-west-2.amazonaws.com/js-pipeline-test:recent"
+                script {
+                    hook = registerWebhook()
+                    withAWS(credentials: 'awsKeys') {
+                        snsPublish(message: hook.getURL(), topicArn: "arn:aws:sns:us-west-2:600253944034:jenkins-test", subject: "Test message to jenkins")
+                    }
+                    data = waitForWebhook hook
+                }
+                slackSend(message: "Testing complete", channel: "@trevor_garn")
             }
         }
     }
